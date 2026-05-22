@@ -1,4 +1,4 @@
-# `autocommit` (Rust port)
+# `autocommit-rs`
 
 Tool that generates and pushes [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/#specification) from staged changes in one go. For free :)
 
