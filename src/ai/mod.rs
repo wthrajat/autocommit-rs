@@ -1,4 +1,6 @@
-use anyhow::Result;
+mod gemini;
+mod openai;
+pub(crate) mod prompts;
 
 use crate::types::{CommitType, MessageStyle, ModelType};
 
@@ -13,10 +15,10 @@ pub struct GenerateOptions<'a> {
 pub async fn generate_commit_message(
     model: ModelType,
     options: GenerateOptions<'_>,
-) -> Result<String> {
+) -> anyhow::Result<String> {
     match model {
         ModelType::Gemini => {
-            crate::gemini::generate_commit_message(
+            self::gemini::generate_commit_message(
                 options.diff,
                 options.commit_type,
                 options.files,
@@ -26,7 +28,7 @@ pub async fn generate_commit_message(
             .await
         }
         ModelType::Openai => {
-            crate::openai::generate_commit_message(
+            self::openai::generate_commit_message(
                 options.diff,
                 options.commit_type,
                 options.files,

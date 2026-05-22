@@ -2,12 +2,13 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::Serialize;
 
-use crate::diff::{clean_diff, generate_prompt};
-use crate::prompts::{
+use crate::git::diff::{clean_diff, generate_prompt};
+use crate::types::{CommitType, MessageStyle};
+
+use super::prompts::{
     FALLBACK_MESSAGE, MAX_DIFF_LENGTH, MAX_TOKENS_LONG, MAX_TOKENS_SHORT, SYSTEM_PROMPT_LONG,
     SYSTEM_PROMPT_SHORT,
 };
-use crate::types::{CommitType, MessageStyle};
 
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
 
@@ -106,7 +107,6 @@ pub async fn generate_commit_message(
             {
                 return Ok(content);
             }
-            // Fallback
             Ok(match commit_type {
                 Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),
                 None => FALLBACK_MESSAGE.to_string(),

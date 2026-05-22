@@ -1,5 +1,8 @@
-use anyhow::{Context, Result, bail};
 use std::process::Command;
+
+use anyhow::{Context, Result, bail};
+
+pub mod diff;
 
 pub fn is_git_repository() -> Result<()> {
     let status = Command::new("git")
@@ -17,7 +20,6 @@ pub fn has_staged_changes() -> Result<bool> {
         .args(["diff", "--cached", "--quiet"])
         .status()
         .context("Failed to check for staged changes")?;
-    // Exit code 0 = no differences, 1 = has differences
     Ok(!status.success())
 }
 
@@ -38,7 +40,7 @@ pub fn get_changed_files() -> Result<Vec<String>> {
     let stdout = String::from_utf8(output.stdout)?;
     Ok(stdout
         .lines()
-        .map(|s| s.to_string())
+        .map(String::from)
         .filter(|s| !s.is_empty())
         .collect())
 }

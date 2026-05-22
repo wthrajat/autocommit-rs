@@ -2,12 +2,13 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::Serialize;
 
-use crate::diff::{clean_diff, generate_prompt};
-use crate::prompts::{
+use crate::git::diff::{clean_diff, generate_prompt};
+use crate::types::{CommitType, MessageStyle};
+
+use super::prompts::{
     FALLBACK_MESSAGE, MAX_DIFF_LENGTH, MAX_TOKENS_LONG, MAX_TOKENS_SHORT, SYSTEM_PROMPT_LONG,
     SYSTEM_PROMPT_SHORT,
 };
-use crate::types::{CommitType, MessageStyle};
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
 
@@ -114,13 +115,11 @@ pub async fn generate_commit_message(
                     .first()
                     .and_then(|c| c.content.as_ref())
                     .and_then(|c| {
-                        // Try text field first
                         if let Some(text) = &c.text
                             && !text.is_empty()
                         {
                             return Some(text.trim().to_string());
                         }
-                        // Fallback: assemble from parts
                         let combined: String = c
                             .parts
                             .iter()
@@ -145,7 +144,6 @@ pub async fn generate_commit_message(
                     return Ok(content);
                 }
             }
-            // Fallback
             Ok(match commit_type {
                 Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),
                 None => FALLBACK_MESSAGE.to_string(),

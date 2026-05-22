@@ -45,16 +45,13 @@ pub fn generate_prompt(
 }
 
 fn extract_ticket_id(branch_name: &str) -> Option<String> {
-    // Match patterns like ABC-123, PROJ-42, etc.
     let chars: Vec<char> = branch_name.chars().collect();
     for i in 0..chars.len() {
         if chars[i].is_ascii_uppercase() {
-            // Find the end of the uppercase sequence
             let mut j = i;
             while j < chars.len() && chars[j].is_ascii_uppercase() {
                 j += 1;
             }
-            // Check for dash followed by digits
             if j < chars.len() && chars[j] == '-' {
                 let start = j + 1;
                 if start < chars.len() && chars[start].is_ascii_digit() {
