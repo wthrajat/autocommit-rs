@@ -26,26 +26,22 @@ pub fn generate_prompt(
     };
 
     let files_info = if !files.is_empty() {
-        format!(
-            "\n\nChanged files: {}",
-            files.join(", ")
-        )
+        format!("\n\nChanged files: {}", files.join(", "))
     } else {
         String::new()
     };
 
     let mut ticket_instruction = String::new();
     if !branch_name.is_empty()
-        && let Some(ticket) = extract_ticket_id(branch_name) {
-            ticket_instruction = format!(
-                "\n\nIMPORTANT: The branch name contains ticket ID {}. You MUST append [{}] to the end of the commit summary line.",
-                ticket, ticket
-            );
-        }
+        && let Some(ticket) = extract_ticket_id(branch_name)
+    {
+        ticket_instruction = format!(
+            "\n\nIMPORTANT: The branch name contains ticket ID {}. You MUST append [{}] to the end of the commit summary line.",
+            ticket, ticket
+        );
+    }
 
-    format!(
-        "{type_constraint}{files_info}{ticket_instruction}\n\nGit diff:\n{diff}"
-    )
+    format!("{type_constraint}{files_info}{ticket_instruction}\n\nGit diff:\n{diff}")
 }
 
 fn extract_ticket_id(branch_name: &str) -> Option<String> {

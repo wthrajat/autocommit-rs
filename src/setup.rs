@@ -1,12 +1,15 @@
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::{Password, Select, Confirm};
+use dialoguer::{Confirm, Password, Select};
 
 use crate::config::{save_api_key, set_message_style, set_signed_commit};
 use crate::types::{MessageStyle, ModelType};
 
 pub fn run_interactive_setup() -> Result<()> {
-    println!("{}", "Welcome to autocommit! Let's set up your configuration.\n".yellow());
+    println!(
+        "{}",
+        "Welcome to autocommit! Let's set up your configuration.\n".yellow()
+    );
 
     let model_selection = Select::new()
         .with_prompt("Which AI model would you like to use?")
@@ -61,7 +64,10 @@ pub fn run_interactive_setup() -> Result<()> {
 
 fn print_setup_success() {
     println!("{} Configuration saved to ~/.autocommitrc!", "✔".green());
-    println!("{} You can change these settings anytime with:", " ".dimmed());
+    println!(
+        "{} You can change these settings anytime with:",
+        " ".dimmed()
+    );
     println!("  autocommit --openai-key \"key\"");
     println!("  autocommit --gemini-key \"key\"");
     println!("  autocommit --model openai|gemini");

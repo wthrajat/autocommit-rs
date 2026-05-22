@@ -47,8 +47,8 @@ pub async fn generate_commit_message(
     branch_name: &str,
     message_style: MessageStyle,
 ) -> Result<String> {
-    let api_key =
-        std::env::var("OPENAI_API_KEY").context("OPENAI_API_KEY environment variable is not set")?;
+    let api_key = std::env::var("OPENAI_API_KEY")
+        .context("OPENAI_API_KEY environment variable is not set")?;
 
     if diff.trim().is_empty() {
         eprintln!("{} No diff found", "✖".red());
@@ -102,9 +102,10 @@ pub async fn generate_commit_message(
                     .and_then(|c| c.message.as_ref())
                     .and_then(|m| m.content.as_ref())
                     .map(|c| c.trim().to_string())
-                    && !content.is_empty() {
-                        return Ok(content);
-                    }
+                && !content.is_empty()
+            {
+                return Ok(content);
+            }
             // Fallback
             Ok(match commit_type {
                 Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),

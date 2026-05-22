@@ -1,6 +1,7 @@
 pub const FALLBACK_MESSAGE: &str = "chore(scope): update files";
 
-pub const SYSTEM_PROMPT_SHORT: &str = "You are a git commit generator. Follow Conventional Commits strictly.
+pub const SYSTEM_PROMPT_SHORT: &str =
+    "You are a git commit generator. Follow Conventional Commits strictly.
 
 Rules:
 1. Output EXACTLY ONE summary line only.
@@ -8,7 +9,8 @@ Rules:
 3. Summary max 72 chars, lowercase, no trailing period.
 4. NEVER output multiple separate commits, combine them into one.";
 
-pub const SYSTEM_PROMPT_LONG: &str = "You are a git commit generator. Follow Conventional Commits strictly.
+pub const SYSTEM_PROMPT_LONG: &str =
+    "You are a git commit generator. Follow Conventional Commits strictly.
 
 Rules:
 1. Output EXACTLY ONE summary line first.

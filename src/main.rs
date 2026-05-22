@@ -93,7 +93,10 @@ async fn validate_git_state() -> Result<()> {
     Ok(())
 }
 
-async fn generate_message(model: types::ModelType, message_style: types::MessageStyle) -> Result<String> {
+async fn generate_message(
+    model: types::ModelType,
+    message_style: types::MessageStyle,
+) -> Result<String> {
     let (diff, files, branch_name) = tokio::try_join!(
         tokio::task::spawn_blocking(git::get_staged_diff),
         tokio::task::spawn_blocking(git::get_changed_files),
@@ -148,18 +151,16 @@ async fn get_user_action(message: &str) -> Result<(crate::types::ActionType, Str
             types::ActionType::Accept => {
                 break;
             }
-            types::ActionType::Edit => {
-                match ui::open_editor(&final_message) {
-                    Ok(edited) => {
-                        final_message = edited;
-                        break;
-                    }
-                    Err(e) => {
-                        logger_error(&format!("Failed to open editor: {}", e));
-                        std::process::exit(1);
-                    }
+            types::ActionType::Edit => match ui::open_editor(&final_message) {
+                Ok(edited) => {
+                    final_message = edited;
+                    break;
                 }
-            }
+                Err(e) => {
+                    logger_error(&format!("Failed to open editor: {}", e));
+                    std::process::exit(1);
+                }
+            },
             types::ActionType::Quit => {
                 logger_info("Aborted.");
                 std::process::exit(0);
@@ -214,7 +215,10 @@ async fn main() -> Result<()> {
             "openai" => types::ModelType::Openai,
             "gemini" => types::ModelType::Gemini,
             other => {
-                logger_error(&format!("Please specify --model with \"openai\" or \"gemini\" (got: {})", other));
+                logger_error(&format!(
+                    "Please specify --model with \"openai\" or \"gemini\" (got: {})",
+                    other
+                ));
                 std::process::exit(1);
             }
         };
@@ -253,7 +257,7 @@ async fn main() -> Result<()> {
     }
 
     let cfg = config::get_config()?;
-    
+
     // Set API key env vars from config (matching original setupApiKeyFromEnv)
     // SAFETY: This is a single-threaded CLI app; env var modification is safe here.
     unsafe {

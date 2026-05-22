@@ -43,7 +43,6 @@ pub enum ModelType {
     Gemini,
 }
 
-
 impl ModelType {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -61,7 +60,6 @@ pub enum MessageStyle {
     Short,
     Long,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActionType {

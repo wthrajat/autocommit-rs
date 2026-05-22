@@ -9,17 +9,18 @@ use crate::types::ActionType;
 
 pub fn show_commit_options(message: &str) -> Result<ActionType> {
     println!("\n{}", "Generated commit message:".bold());
-    println!("{}", "--------------------------------------------------".cyan());
+    println!(
+        "{}",
+        "--------------------------------------------------".cyan()
+    );
     println!("{}", message);
-    println!("{}", "--------------------------------------------------".cyan());
+    println!(
+        "{}",
+        "--------------------------------------------------".cyan()
+    );
     println!();
 
-    let items = vec![
-        "Accept and commit",
-        "Edit message",
-        "Regenerate",
-        "Quit",
-    ];
+    let items = vec!["Accept and commit", "Edit message", "Regenerate", "Quit"];
 
     let selection = Select::new()
         .with_prompt("What would you like to do?")

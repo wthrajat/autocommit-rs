@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 pub fn is_git_repository() -> Result<()> {
@@ -36,7 +36,11 @@ pub fn get_changed_files() -> Result<Vec<String>> {
         .output()
         .context("Failed to get changed files")?;
     let stdout = String::from_utf8(output.stdout)?;
-    Ok(stdout.lines().map(|s| s.to_string()).filter(|s| !s.is_empty()).collect())
+    Ok(stdout
+        .lines()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .collect())
 }
 
 pub fn commit_changes(message: &str, signed: bool, no_verify: bool) -> Result<()> {

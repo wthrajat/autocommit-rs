@@ -5,12 +5,16 @@ pub fn classify_diff(files: &[String], diff: &str) -> Option<CommitType> {
         return classify_by_diff_content(diff);
     }
 
-    let is_only_tests = files.iter().all(|f| f.contains("test") || f.contains("spec"));
+    let is_only_tests = files
+        .iter()
+        .all(|f| f.contains("test") || f.contains("spec"));
     if is_only_tests {
         return Some(CommitType::Test);
     }
 
-    let is_only_docs = files.iter().all(|f| f.ends_with(".md") || f.contains("docs/"));
+    let is_only_docs = files
+        .iter()
+        .all(|f| f.ends_with(".md") || f.contains("docs/"));
     if is_only_docs {
         return Some(CommitType::Docs);
     }
@@ -32,10 +36,7 @@ pub fn classify_diff(files: &[String], diff: &str) -> Option<CommitType> {
 fn classify_by_diff_content(diff: &str) -> Option<CommitType> {
     let lower_diff = diff.to_lowercase();
 
-    if lower_diff.contains("fix")
-        || lower_diff.contains("bug")
-        || lower_diff.contains("error")
-    {
+    if lower_diff.contains("fix") || lower_diff.contains("bug") || lower_diff.contains("error") {
         return Some(CommitType::Fix);
     }
 

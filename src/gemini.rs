@@ -9,8 +9,7 @@ use crate::prompts::{
 };
 use crate::types::{CommitType, MessageStyle};
 
-const GEMINI_API_URL: &str =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
+const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
 
 #[derive(Serialize)]
 struct GeminiContent {
@@ -66,8 +65,8 @@ pub async fn generate_commit_message(
     branch_name: &str,
     message_style: MessageStyle,
 ) -> Result<String> {
-    let api_key =
-        std::env::var("GEMINI_API_KEY").context("GEMINI_API_KEY environment variable is not set")?;
+    let api_key = std::env::var("GEMINI_API_KEY")
+        .context("GEMINI_API_KEY environment variable is not set")?;
 
     if diff.trim().is_empty() {
         eprintln!("{} No diff found", "✖".red());
@@ -92,9 +91,7 @@ pub async fn generate_commit_message(
     let client = reqwest::Client::new();
     let request = GeminiContent {
         contents: vec![GeminiPart {
-            parts: vec![Part {
-                text: user_prompt,
-            }],
+            parts: vec![Part { text: user_prompt }],
         }],
         system_instruction: Some(GeminiPart {
             parts: vec![Part {
@@ -119,9 +116,10 @@ pub async fn generate_commit_message(
                     .and_then(|c| {
                         // Try text field first
                         if let Some(text) = &c.text
-                            && !text.is_empty() {
-                                return Some(text.trim().to_string());
-                            }
+                            && !text.is_empty()
+                        {
+                            return Some(text.trim().to_string());
+                        }
                         // Fallback: assemble from parts
                         let combined: String = c
                             .parts
@@ -142,9 +140,10 @@ pub async fn generate_commit_message(
                     });
 
                 if let Some(content) = content
-                    && !content.is_empty() {
-                        return Ok(content);
-                    }
+                    && !content.is_empty()
+                {
+                    return Ok(content);
+                }
             }
             // Fallback
             Ok(match commit_type {
