@@ -17,7 +17,7 @@ This is a Rust port of the original [@wthrajat/autocommit](https://github.com/wt
 
 ```bash
 git clone <repo-url>
-cd autocommit/rust-autocommit
+cd autocommit
 cargo build --release
 ```
 
@@ -78,7 +78,6 @@ Configuration is stored in `~/.autocommitrc` as JSON. On first run, `autocommit`
 ## Local development
 
 ```bash
-cd rust-autocommit
 cargo build
 cargo test
 cargo run -- --help
