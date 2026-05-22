@@ -95,9 +95,9 @@ async fn validate_git_state() -> Result<()> {
 
 async fn generate_message(model: types::ModelType, message_style: types::MessageStyle) -> Result<String> {
     let (diff, files, branch_name) = tokio::try_join!(
-        tokio::task::spawn_blocking(|| git::get_staged_diff()),
-        tokio::task::spawn_blocking(|| git::get_changed_files()),
-        tokio::task::spawn_blocking(|| git::get_branch_name()),
+        tokio::task::spawn_blocking(git::get_staged_diff),
+        tokio::task::spawn_blocking(git::get_changed_files),
+        tokio::task::spawn_blocking(git::get_branch_name),
     )?;
     let diff = diff?;
     let files = files?;

@@ -36,16 +36,13 @@ impl CommitType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ModelType {
+    #[default]
     Openai,
     Gemini,
 }
 
-impl Default for ModelType {
-    fn default() -> Self {
-        ModelType::Openai
-    }
-}
 
 impl ModelType {
     pub fn as_str(&self) -> &'static str {
@@ -58,16 +55,13 @@ impl ModelType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MessageStyle {
+    #[default]
     Short,
     Long,
 }
 
-impl Default for MessageStyle {
-    fn default() -> Self {
-        MessageStyle::Short
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActionType {

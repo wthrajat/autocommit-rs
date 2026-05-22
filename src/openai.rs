@@ -95,19 +95,16 @@ pub async fn generate_commit_message(
         .await
     {
         Ok(response) => {
-            if let Ok(completion) = response.json::<ChatCompletionResponse>().await {
-                if let Some(content) = completion
+            if let Ok(completion) = response.json::<ChatCompletionResponse>().await
+                && let Some(content) = completion
                     .choices
                     .first()
                     .and_then(|c| c.message.as_ref())
                     .and_then(|m| m.content.as_ref())
                     .map(|c| c.trim().to_string())
-                {
-                    if !content.is_empty() {
+                    && !content.is_empty() {
                         return Ok(content);
                     }
-                }
-            }
             // Fallback
             Ok(match commit_type {
                 Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),

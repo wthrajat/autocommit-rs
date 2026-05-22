@@ -118,11 +118,10 @@ pub async fn generate_commit_message(
                     .and_then(|c| c.content.as_ref())
                     .and_then(|c| {
                         // Try text field first
-                        if let Some(text) = &c.text {
-                            if !text.is_empty() {
+                        if let Some(text) = &c.text
+                            && !text.is_empty() {
                                 return Some(text.trim().to_string());
                             }
-                        }
                         // Fallback: assemble from parts
                         let combined: String = c
                             .parts
@@ -142,11 +141,10 @@ pub async fn generate_commit_message(
                         }
                     });
 
-                if let Some(content) = content {
-                    if !content.is_empty() {
+                if let Some(content) = content
+                    && !content.is_empty() {
                         return Ok(content);
                     }
-                }
             }
             // Fallback
             Ok(match commit_type {
