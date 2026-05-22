@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 description = "Tool that generates conventional commits from staged changes and executes the commit in one go."
 license = "MIT"
-repository = "https://github.com/wthrajat/autocommit"
+repository = "https://github.com/wthrajat/autocommit-rs"
+homepage = "https://github.com/wthrajat/autocommit-rs"
+documentation = "https://docs.rs/autocommit-rs"
 authors = ["Rajat Khanduri <logsinx@proton.me> (https://wthrajat.com)"]
+keywords = ["git", "commit", "conventional-commits", "cli", "automation"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 anyhow = "1"
