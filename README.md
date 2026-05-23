@@ -1,6 +1,6 @@
 # `autocommit-rs`
 
-[![Crates.io](https://img.shields.io/crates/v/autocommit.svg)](https://crates.io/crates/autocommit)
+[![Crates.io](https://img.shields.io/crates/v/autocommit-rs.svg)](https://crates.io/crates/autocommit-rs)
 
 Tool that generates and publishes [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/#specification) from staged changes in one go. For free :)
 
@@ -18,14 +18,14 @@ This is a Rust port of the original [@wthrajat/autocommit](https://github.com/wt
 ### From crates.io (recommended)
 
 ```bash
-cargo install autocommit
+cargo install autocommit-rs
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/wthrajat/autocommit
-cd autocommit
+git clone https://github.com/wthrajat/autocommit-rs
+cd autocommit-rs
 cargo build --release
 ```
 
@@ -37,15 +37,15 @@ cp ./target/release/autocommit ~/.local/bin/
 
 ### Pre-built binaries
 
-Pre-built binaries for Linux, macOS (Intel & Apple Silicon), and Windows are available on the [GitHub Releases page](https://github.com/wthrajat/autocommit/releases).
+Pre-built binaries for Linux, macOS (Intel & Apple Silicon), and Windows are available on the [GitHub Releases page](https://github.com/wthrajat/autocommit-rs/releases).
 
 ## Updating
 
 ```bash
-cargo install autocommit --force
+cargo install autocommit-rs --force
 ```
 
-Or download the latest pre-built binary from the [GitHub Releases page](https://github.com/wthrajat/autocommit/releases).
+Or download the latest pre-built binary from the [GitHub Releases page](https://github.com/wthrajat/autocommit-rs/releases).
 
 ## Usage
 
@@ -133,9 +133,9 @@ New releases are automated via GitHub Actions. To publish a new version:
 
 The release workflow will automatically (no need to push tags manually):
 - Create a git tag (`v0.2.0`)
-- Publish the crate to [crates.io](https://crates.io/crates/autocommit)
+- Publish the crate to [crates.io](https://crates.io/crates/autocommit-rs)
 - Build binaries for Linux, macOS, and Windows
-- Create a [GitHub Release](https://github.com/wthrajat/autocommit/releases) with the binaries attached
+- Create a [GitHub Release](https://github.com/wthrajat/autocommit-rs/releases) with the binaries attached
 
 ### Manual publish (if needed)
 

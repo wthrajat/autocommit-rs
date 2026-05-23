@@ -1,5 +1,5 @@
 [package]
-name = "autocommit"
+name = "autocommit-rs"
 version = "0.1.0"
 edition = "2024"
 description = "Tool that generates conventional commits from staged changes and executes the commit in one go."
@@ -10,6 +10,10 @@ documentation = "https://docs.rs/autocommit-rs"
 authors = ["Rajat Khanduri <logsinx@proton.me> (https://wthrajat.com)"]
 keywords = ["git", "commit", "conventional-commits", "cli", "automation"]
 categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "autocommit"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
