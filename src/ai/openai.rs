@@ -1,123 +1,165 @@
-use anyhow::{Context, Result};
-use colored::Colorize;
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
+use serde_json::{Value, json};
 
-use crate::git::diff::{clean_diff, generate_prompt};
-use crate::types::{CommitType, MessageStyle};
-
-use super::prompts::{
-    FALLBACK_MESSAGE, MAX_DIFF_LENGTH, MAX_TOKENS_LONG, MAX_TOKENS_SHORT, SYSTEM_PROMPT_LONG,
-    SYSTEM_PROMPT_SHORT,
-};
+use super::candidates::schema as candidate_schema;
+use super::client::{response_body, send_with_retry};
+use super::{ProviderResponse, TokenUsage};
 
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
 
 #[derive(Serialize)]
-struct ChatMessage {
-    role: String,
-    content: String,
+struct ChatMessage<'a> {
+    role: &'static str,
+    content: &'a str,
 }
 
 #[derive(Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    temperature: f64,
+struct ChatCompletionRequest<'a> {
+    model: &'a str,
+    messages: [ChatMessage<'a>; 2],
+    reasoning_effort: &'static str,
     max_completion_tokens: u32,
+    prompt_cache_key: &'a str,
+    response_format: Value,
 }
 
 #[derive(serde::Deserialize)]
 struct ChatCompletionResponse {
+    #[serde(default)]
     choices: Vec<Choice>,
+    usage: Option<OpenAiUsage>,
 }
 
 #[derive(serde::Deserialize)]
 struct Choice {
-    message: Option<ChoiceMessage>,
+    message: ChoiceMessage,
 }
 
 #[derive(serde::Deserialize)]
 struct ChoiceMessage {
     content: Option<String>,
+    refusal: Option<String>,
 }
 
-pub async fn generate_commit_message(
-    diff: &str,
-    commit_type: Option<CommitType>,
-    files: &[String],
-    branch_name: &str,
-    message_style: MessageStyle,
-) -> Result<String> {
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .context("OPENAI_API_KEY environment variable is not set")?;
+#[derive(serde::Deserialize)]
+struct OpenAiUsage {
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    prompt_tokens_details: Option<PromptTokenDetails>,
+}
 
-    if diff.trim().is_empty() {
-        eprintln!("{} No diff found", "✖".red());
-        return Ok(FALLBACK_MESSAGE.to_string());
-    }
+#[derive(serde::Deserialize)]
+struct PromptTokenDetails {
+    cached_tokens: Option<u64>,
+}
 
-    let cleaned_diff = clean_diff(diff);
-    let truncated_diff: String = cleaned_diff.chars().take(MAX_DIFF_LENGTH).collect();
-
-    let system_prompt = match message_style {
-        MessageStyle::Long => SYSTEM_PROMPT_LONG,
-        MessageStyle::Short => SYSTEM_PROMPT_SHORT,
-    };
-
-    let max_tokens = match message_style {
-        MessageStyle::Long => MAX_TOKENS_LONG,
-        MessageStyle::Short => MAX_TOKENS_SHORT,
-    };
-
-    let user_prompt = generate_prompt(&truncated_diff, commit_type, files, branch_name);
-
-    let client = reqwest::Client::new();
+pub async fn generate_commit_messages(
+    client: &reqwest::Client,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    prompt_cache_key: &str,
+    max_tokens: u32,
+) -> Result<ProviderResponse> {
     let request = ChatCompletionRequest {
-        model: "gpt-5.4-nano".to_string(),
-        messages: vec![
+        model,
+        messages: [
             ChatMessage {
-                role: "system".to_string(),
-                content: system_prompt.to_string(),
+                role: "system",
+                content: system_prompt,
             },
             ChatMessage {
-                role: "user".to_string(),
+                role: "user",
                 content: user_prompt,
             },
         ],
-        temperature: 0.0,
+        reasoning_effort: "minimal",
         max_completion_tokens: max_tokens,
-    };
-
-    match client
-        .post(OPENAI_API_URL)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&request)
-        .send()
-        .await
-    {
-        Ok(response) => {
-            if let Ok(completion) = response.json::<ChatCompletionResponse>().await
-                && let Some(content) = completion
-                    .choices
-                    .first()
-                    .and_then(|c| c.message.as_ref())
-                    .and_then(|m| m.content.as_ref())
-                    .map(|c| c.trim().to_string())
-                && !content.is_empty()
-            {
-                return Ok(content);
+        prompt_cache_key,
+        response_format: json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": "commit_message_candidates",
+                "strict": true,
+                "schema": candidate_schema()
             }
-            Ok(match commit_type {
-                Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),
-                None => FALLBACK_MESSAGE.to_string(),
-            })
-        }
-        Err(e) => {
-            eprintln!("OpenAI API Error: {}", e);
-            Ok(match commit_type {
-                Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),
-                None => FALLBACK_MESSAGE.to_string(),
-            })
-        }
+        }),
+    };
+    let response = send_with_retry(
+        client
+            .post(OPENAI_API_URL)
+            .bearer_auth(api_key)
+            .json(&request),
+    )
+    .await?;
+    let body = response_body("OpenAI", response).await?;
+    let completion = serde_json::from_str::<ChatCompletionResponse>(&body)
+        .context("OpenAI returned an invalid response")?;
+    let choice = completion
+        .choices
+        .first()
+        .context("OpenAI returned no completion choices")?;
+    if let Some(refusal) = choice.message.refusal.as_deref() {
+        bail!("OpenAI refused to generate a commit message: {refusal}");
+    }
+    let content = choice
+        .message
+        .content
+        .as_deref()
+        .map(str::trim)
+        .filter(|content| !content.is_empty())
+        .context("OpenAI returned an empty commit message")?
+        .to_string();
+    let usage = completion
+        .usage
+        .map_or_else(TokenUsage::default, |usage| TokenUsage {
+            input_tokens: usage.prompt_tokens,
+            cached_input_tokens: usage
+                .prompt_tokens_details
+                .and_then(|details| details.cached_tokens),
+            output_tokens: usage.completion_tokens,
+        });
+
+    Ok(ProviderResponse { content, usage })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_uses_low_cost_parameters_and_structured_output_without_network_access() {
+        let request = ChatCompletionRequest {
+            model: "gpt-5-nano",
+            messages: [
+                ChatMessage {
+                    role: "system",
+                    content: "system",
+                },
+                ChatMessage {
+                    role: "user",
+                    content: "user",
+                },
+            ],
+            reasoning_effort: "minimal",
+            max_completion_tokens: 320,
+            prompt_cache_key: "cache-key",
+            response_format: json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "commit_message_candidates",
+                    "strict": true,
+                    "schema": candidate_schema()
+                }
+            }),
+        };
+        let value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(value["model"], "gpt-5-nano");
+        assert_eq!(value["reasoning_effort"], "minimal");
+        assert_eq!(value["response_format"]["type"], "json_schema");
+        assert!(value.get("temperature").is_none());
     }
 }

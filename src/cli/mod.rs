@@ -5,7 +5,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 pub mod setup;
 pub mod ui;
 
-/// Tool that generates and pushes conventional commits from staged changes in one go.
+/// Generate and create conventional commits from staged changes in one go.
 #[derive(Parser, Debug)]
 #[command(name = "autocommit")]
 #[command(version)]
@@ -42,6 +42,14 @@ pub struct Args {
     /// Bypass pre-commit and commit-msg git hooks
     #[arg(long)]
     pub no_verify: bool,
+
+    /// Show context size, latency, and token usage
+    #[arg(long)]
+    pub stats: bool,
+
+    /// Do not read or write the local generation cache
+    #[arg(long)]
+    pub no_cache: bool,
 }
 
 pub fn logger_info(msg: &str) {
@@ -54,10 +62,6 @@ pub fn logger_success(msg: &str) {
 
 pub fn logger_warn(msg: &str) {
     println!("{} {}", "⚠".yellow(), msg);
-}
-
-pub fn logger_error(msg: &str) {
-    eprintln!("{} {}", "✖".red(), msg);
 }
 
 pub fn create_spinner(text: &str) -> ProgressBar {

@@ -33,6 +33,19 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    pub fn has_selected_api_key(&self) -> bool {
+        !self.api_key_for(self.model).trim().is_empty()
+    }
+
+    pub fn api_key_for(&self, model: ModelType) -> &str {
+        match model {
+            ModelType::Openai => &self.openai_key,
+            ModelType::Gemini => &self.gemini_key,
+        }
+    }
+}
+
 fn config_path() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -69,7 +82,7 @@ pub fn save_config(config: &Config) -> Result<()> {
 }
 
 pub fn get_config() -> Result<Config> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
 
     if let Ok(key) = std::env::var("GEMINI_API_KEY") {
         config.gemini_key = key;
@@ -98,13 +111,8 @@ pub fn get_config() -> Result<Config> {
     Ok(config)
 }
 
-pub fn config_file_exists() -> bool {
-    let config = load_config().unwrap_or_default();
-    !config.openai_key.is_empty() || !config.gemini_key.is_empty()
-}
-
 pub fn save_api_key(api_key: &str, model: ModelType) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     match model {
         ModelType::Openai => config.openai_key = api_key.to_string(),
         ModelType::Gemini => config.gemini_key = api_key.to_string(),
@@ -114,34 +122,35 @@ pub fn save_api_key(api_key: &str, model: ModelType) -> Result<()> {
 }
 
 pub fn set_model(model: ModelType) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     config.model = model;
     save_config(&config)
 }
 
 pub fn set_message_style(style: MessageStyle) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     config.message_style = style;
     save_config(&config)
 }
 
 pub fn set_signed_commit(signed: bool) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     config.signed_commit = signed;
     save_config(&config)
 }
 
-pub fn get_message_style(config: &Config) -> MessageStyle {
-    if let Ok(val) = std::env::var("AUTOCOMMIT_MESSAGE_STYLE") {
-        match val.as_str() {
-            "short" => return MessageStyle::Short,
-            "long" => return MessageStyle::Long,
-            _ => {}
-        }
-    }
-    config.message_style
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub fn get_signed_commit(config: &Config) -> bool {
-    config.signed_commit
+    #[test]
+    fn selected_provider_requires_its_own_key_without_network_access() {
+        let config = Config {
+            gemini_key: "gemini-key".to_string(),
+            model: ModelType::Openai,
+            ..Config::default()
+        };
+
+        assert!(!config.has_selected_api_key());
+    }
 }

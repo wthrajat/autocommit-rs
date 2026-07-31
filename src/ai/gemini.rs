@@ -1,160 +1,166 @@
-use anyhow::{Context, Result};
-use colored::Colorize;
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
+use serde_json::{Value, json};
 
-use crate::git::diff::{clean_diff, generate_prompt};
-use crate::types::{CommitType, MessageStyle};
+use super::candidates::schema as candidate_schema;
+use super::client::{response_body, send_with_retry};
+use super::{ProviderResponse, TokenUsage};
 
-use super::prompts::{
-    FALLBACK_MESSAGE, MAX_DIFF_LENGTH, MAX_TOKENS_LONG, MAX_TOKENS_SHORT, SYSTEM_PROMPT_LONG,
-    SYSTEM_PROMPT_SHORT,
-};
-
-const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
+const GEMINI_API_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 #[derive(Serialize)]
-struct GeminiContent {
-    contents: Vec<GeminiPart>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system_instruction: Option<GeminiPart>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    generation_config: Option<GenerationConfig>,
+struct GeminiRequest<'a> {
+    contents: [GeminiContent<'a>; 1],
+    #[serde(rename = "system_instruction")]
+    system_instruction: GeminiContent<'a>,
+    #[serde(rename = "generationConfig")]
+    generation_config: Value,
 }
 
 #[derive(Serialize)]
-struct GeminiPart {
-    parts: Vec<Part>,
-}
-
-#[derive(Serialize, serde::Deserialize)]
-struct Part {
-    text: String,
+struct GeminiContent<'a> {
+    parts: [GeminiPart<'a>; 1],
 }
 
 #[derive(Serialize)]
-struct GenerationConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_output_tokens: Option<u32>,
+struct GeminiPart<'a> {
+    text: &'a str,
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GeminiResponse {
     #[serde(default)]
     candidates: Vec<Candidate>,
+    usage_metadata: Option<GeminiUsage>,
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Candidate {
-    #[serde(default)]
     content: Option<CandidateContent>,
+    finish_reason: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 struct CandidateContent {
     #[serde(default)]
-    parts: Vec<Part>,
-    #[serde(default)]
-    text: Option<String>,
+    parts: Vec<ResponsePart>,
 }
 
-pub async fn generate_commit_message(
-    diff: &str,
-    commit_type: Option<CommitType>,
-    files: &[String],
-    branch_name: &str,
-    message_style: MessageStyle,
-) -> Result<String> {
-    let api_key = std::env::var("GEMINI_API_KEY")
-        .context("GEMINI_API_KEY environment variable is not set")?;
+#[derive(serde::Deserialize)]
+struct ResponsePart {
+    #[serde(default)]
+    text: String,
+}
 
-    if diff.trim().is_empty() {
-        eprintln!("{} No diff found", "✖".red());
-        return Ok(FALLBACK_MESSAGE.to_string());
-    }
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiUsage {
+    prompt_token_count: Option<u64>,
+    candidates_token_count: Option<u64>,
+    cached_content_token_count: Option<u64>,
+}
 
-    let cleaned_diff = clean_diff(diff);
-    let truncated_diff: String = cleaned_diff.chars().take(MAX_DIFF_LENGTH).collect();
-
-    let system_prompt = match message_style {
-        MessageStyle::Long => SYSTEM_PROMPT_LONG,
-        MessageStyle::Short => SYSTEM_PROMPT_SHORT,
-    };
-
-    let max_tokens = match message_style {
-        MessageStyle::Long => MAX_TOKENS_LONG,
-        MessageStyle::Short => MAX_TOKENS_SHORT,
-    };
-
-    let user_prompt = generate_prompt(&truncated_diff, commit_type, files, branch_name);
-
-    let client = reqwest::Client::new();
-    let request = GeminiContent {
-        contents: vec![GeminiPart {
-            parts: vec![Part { text: user_prompt }],
+pub async fn generate_commit_messages(
+    client: &reqwest::Client,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    max_tokens: u32,
+) -> Result<ProviderResponse> {
+    let request = GeminiRequest {
+        contents: [GeminiContent {
+            parts: [GeminiPart { text: user_prompt }],
         }],
-        system_instruction: Some(GeminiPart {
-            parts: vec![Part {
-                text: system_prompt.to_string(),
+        system_instruction: GeminiContent {
+            parts: [GeminiPart {
+                text: system_prompt,
             }],
-        }),
-        generation_config: Some(GenerationConfig {
-            temperature: Some(0.0),
-            max_output_tokens: Some(max_tokens),
-        }),
-    };
-
-    let url = format!("{}?key={}", GEMINI_API_URL, api_key);
-
-    match client.post(&url).json(&request).send().await {
-        Ok(response) => {
-            if let Ok(gemini_resp) = response.json::<GeminiResponse>().await {
-                let content = gemini_resp
-                    .candidates
-                    .first()
-                    .and_then(|c| c.content.as_ref())
-                    .and_then(|c| {
-                        if let Some(text) = &c.text
-                            && !text.is_empty()
-                        {
-                            return Some(text.trim().to_string());
-                        }
-                        let combined: String = c
-                            .parts
-                            .iter()
-                            .filter_map(|p| {
-                                if p.text.is_empty() {
-                                    None
-                                } else {
-                                    Some(p.text.as_str())
-                                }
-                            })
-                            .collect();
-                        if combined.is_empty() {
-                            None
-                        } else {
-                            Some(combined.trim().to_string())
-                        }
-                    });
-
-                if let Some(content) = content
-                    && !content.is_empty()
-                {
-                    return Ok(content);
+        },
+        generation_config: json!({
+            "maxOutputTokens": max_tokens,
+            "responseFormat": {
+                "text": {
+                    "mimeType": "application/json",
+                    "schema": candidate_schema()
                 }
             }
-            Ok(match commit_type {
-                Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),
-                None => FALLBACK_MESSAGE.to_string(),
-            })
-        }
-        Err(e) => {
-            eprintln!("Gemini API Error: {}", e);
-            Ok(match commit_type {
-                Some(t) => format!("{}(scope): update files (fallback)", t.as_str()),
-                None => FALLBACK_MESSAGE.to_string(),
-            })
-        }
+        }),
+    };
+    let url = format!("{GEMINI_API_BASE_URL}/{model}:generateContent");
+    let response = send_with_retry(
+        client
+            .post(url)
+            .header("x-goog-api-key", api_key)
+            .json(&request),
+    )
+    .await?;
+    let body = response_body("Gemini", response).await?;
+    let response = serde_json::from_str::<GeminiResponse>(&body)
+        .context("Gemini returned an invalid response")?;
+    let candidate = response
+        .candidates
+        .first()
+        .context("Gemini returned no completion candidates")?;
+    let content = candidate
+        .content
+        .as_ref()
+        .map(|content| {
+            content
+                .parts
+                .iter()
+                .map(|part| part.text.as_str())
+                .collect::<String>()
+        })
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty());
+    let Some(content) = content else {
+        let reason = candidate.finish_reason.as_deref().unwrap_or("unknown");
+        bail!("Gemini returned an empty commit message (finish reason: {reason})");
+    };
+    let usage = response
+        .usage_metadata
+        .map_or_else(TokenUsage::default, |usage| TokenUsage {
+            input_tokens: usage.prompt_token_count,
+            cached_input_tokens: usage.cached_content_token_count,
+            output_tokens: usage.candidates_token_count,
+        });
+
+    Ok(ProviderResponse { content, usage })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_uses_current_rest_fields_without_network_access() {
+        let request = GeminiRequest {
+            contents: [GeminiContent {
+                parts: [GeminiPart { text: "user" }],
+            }],
+            system_instruction: GeminiContent {
+                parts: [GeminiPart { text: "system" }],
+            },
+            generation_config: json!({
+                "maxOutputTokens": 320,
+                "responseFormat": {
+                    "text": {
+                        "mimeType": "application/json",
+                        "schema": candidate_schema()
+                    }
+                }
+            }),
+        };
+        let value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(value["system_instruction"]["parts"][0]["text"], "system");
+        assert_eq!(
+            value["generationConfig"]["responseFormat"]["text"]["mimeType"],
+            "application/json"
+        );
+        assert!(value["generationConfig"].get("temperature").is_none());
     }
 }

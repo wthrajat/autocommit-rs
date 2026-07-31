@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 use dialoguer::{Confirm, Password, Select};
 
-use crate::config::{save_api_key, set_message_style, set_signed_commit};
+use crate::config::{Config, save_config};
 use crate::types::{MessageStyle, ModelType};
 
 pub fn run_interactive_setup() -> Result<()> {
@@ -54,9 +54,17 @@ pub fn run_interactive_setup() -> Result<()> {
         .default(false)
         .interact()?;
 
-    save_api_key(&api_key, model)?;
-    set_message_style(message_style)?;
-    set_signed_commit(signed_commit)?;
+    let mut config = Config {
+        model,
+        message_style,
+        signed_commit,
+        ..Config::default()
+    };
+    match model {
+        ModelType::Openai => config.openai_key = api_key,
+        ModelType::Gemini => config.gemini_key = api_key,
+    }
+    save_config(&config)?;
 
     print_setup_success();
     Ok(())

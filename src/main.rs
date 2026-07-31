@@ -9,113 +9,186 @@ mod config;
 mod git;
 mod types;
 
-async fn validate_git_state() -> Result<()> {
-    git::is_git_repository()?;
-    let has_changes = git::has_staged_changes()?;
-    if !has_changes {
+struct PreparedChanges {
+    diff: git::diff::DiffContext,
+    files: Vec<String>,
+    branch_name: String,
+    commit_type: Option<types::CommitType>,
+}
+
+fn prepare_changes() -> Result<Option<PreparedChanges>> {
+    let repository = git::get_repository_state()?;
+    if repository.staged_files.is_empty() {
         cli::logger_warn("No staged changes found. Did you forget to run `git add`?");
-        std::process::exit(0);
+        return Ok(None);
     }
-    Ok(())
+
+    let diff = git::get_staged_diff_context(&repository.staged_files)?;
+    let commit_type = classifier::classify_files(&repository.staged_files);
+    Ok(Some(PreparedChanges {
+        diff,
+        files: repository.staged_files,
+        branch_name: repository.branch_name,
+        commit_type,
+    }))
 }
 
-async fn generate_message(
-    model: types::ModelType,
+async fn generate_candidates(
+    generator: &ai::Generator,
+    changes: &PreparedChanges,
     message_style: types::MessageStyle,
-) -> Result<String> {
-    let (diff, files, branch_name) = tokio::try_join!(
-        tokio::task::spawn_blocking(git::get_staged_diff),
-        tokio::task::spawn_blocking(git::get_changed_files),
-        tokio::task::spawn_blocking(git::get_branch_name),
-    )?;
-    let diff = diff?;
-    let files = files?;
-    let branch_name = branch_name?;
+    excluded_candidates: &[String],
+    use_cache: bool,
+    show_stats: bool,
+) -> Result<Vec<String>> {
+    let spinner = cli::create_spinner("Generating commit message candidates...");
+    let result = generator
+        .generate(
+            ai::GenerateOptions {
+                diff: &changes.diff.patch,
+                diff_fingerprint: &changes.diff.fingerprint,
+                commit_type: changes.commit_type,
+                files: &changes.files,
+                branch_name: &changes.branch_name,
+                message_style,
+            },
+            excluded_candidates,
+            use_cache,
+        )
+        .await;
 
-    let commit_type = classifier::classify_diff(&files, &diff);
-
-    let spinner = cli::create_spinner("Analyzing diff and generating commit message...");
-    let model_name = match model {
-        types::ModelType::Gemini => "Gemini",
-        types::ModelType::Openai => "OpenAI",
-    };
-    println!("{}", format!("Using {} for generation", model_name).blue());
-
-    let message = ai::generate_commit_message(
-        model,
-        ai::GenerateOptions {
-            diff: &diff,
-            commit_type,
-            files: &files,
-            branch_name: &branch_name,
-            message_style,
-        },
-    )
-    .await;
-
-    match message {
-        Ok(msg) => {
-            spinner.finish_with_message("Commit message generated!".to_string());
-            Ok(msg)
+    match result {
+        Ok(result) => {
+            let message = if result.metrics.cache_hit {
+                "Loaded commit messages from cache"
+            } else {
+                "Commit messages generated"
+            };
+            spinner.finish_with_message(message.to_string());
+            if show_stats {
+                print_generation_stats(&result.metrics);
+            }
+            Ok(result.candidates)
         }
-        Err(e) => {
-            spinner.finish_with_message("Failed to generate message".to_string());
-            cli::logger_error(&e.to_string());
-            std::process::exit(1);
+        Err(error) => {
+            spinner.finish_with_message("Failed to generate commit messages".to_string());
+            Err(error)
         }
     }
 }
 
-async fn get_user_action(message: &str) -> Result<(types::ActionType, String)> {
-    let mut action = types::ActionType::Regenerate;
-    let mut final_message = message.to_string();
+async fn choose_commit_message(
+    generator: &ai::Generator,
+    changes: &PreparedChanges,
+    message_style: types::MessageStyle,
+    use_cache: bool,
+    show_stats: bool,
+) -> Result<Option<String>> {
+    let mut candidates = generate_candidates(
+        generator,
+        changes,
+        message_style,
+        &[],
+        use_cache,
+        show_stats,
+    )
+    .await?;
+    let mut current_index = 0;
 
-    while action == types::ActionType::Regenerate {
-        action = cli::ui::show_commit_options(&final_message)?;
-
-        match action {
-            types::ActionType::Accept => break,
-            types::ActionType::Edit => match cli::ui::open_editor(&final_message) {
-                Ok(edited) => {
-                    final_message = edited;
-                    break;
-                }
-                Err(e) => {
-                    cli::logger_error(&format!("Failed to open editor: {}", e));
-                    std::process::exit(1);
-                }
-            },
+    loop {
+        let current = &candidates[current_index];
+        match cli::ui::show_commit_options(current)? {
+            types::ActionType::Accept => return Ok(Some(current.clone())),
+            types::ActionType::Edit => {
+                return cli::ui::open_editor(current).map(Some);
+            }
             types::ActionType::Quit => {
                 cli::logger_info("Aborted.");
-                std::process::exit(0);
+                return Ok(None);
             }
-            types::ActionType::Regenerate => {}
+            types::ActionType::Regenerate => {
+                current_index += 1;
+                if current_index == candidates.len() {
+                    let new_candidates = generate_candidates(
+                        generator,
+                        changes,
+                        message_style,
+                        &candidates,
+                        use_cache,
+                        show_stats,
+                    )
+                    .await?;
+                    candidates.extend(new_candidates);
+                }
+            }
         }
     }
-
-    Ok((action, final_message))
 }
 
-async fn commit(message: &str, signed: bool, no_verify: bool) -> Result<()> {
+fn commit(message: &str, signed: bool, no_verify: bool) -> Result<()> {
     let spinner = cli::create_spinner("Committing...");
-    let result = git::commit_changes(message, signed, no_verify);
-    match result {
+    match git::commit_changes(message, signed, no_verify) {
         Ok(()) => {
             spinner.finish_with_message("Committed successfully!".to_string());
             Ok(())
         }
-        Err(e) => {
+        Err(error) => {
             spinner.finish_with_message("Git commit failed".to_string());
-            cli::logger_error(&e.to_string());
-            std::process::exit(1);
+            Err(error)
         }
     }
 }
 
-#[tokio::main]
+fn print_context_stats(stats: &git::diff::DiffStats) {
+    let truncation = if stats.truncated { ", truncated" } else { "" };
+    println!(
+        "{} Context: {} across {} files → {} sent; {} generated patches omitted{}",
+        "ℹ".blue(),
+        format_bytes(stats.raw_bytes),
+        stats.changed_files,
+        format_bytes(stats.included_bytes),
+        stats.omitted_generated_files,
+        truncation,
+    );
+}
+
+fn print_generation_stats(metrics: &ai::GenerationMetrics) {
+    if metrics.cache_hit {
+        println!(
+            "{} AI: {} (local cache hit, 0 tokens)",
+            "ℹ".blue(),
+            metrics.model
+        );
+        return;
+    }
+
+    let usage = &metrics.usage;
+    println!(
+        "{} AI: {} in {:.2}s; input {}, cached {}, output {} tokens",
+        "ℹ".blue(),
+        metrics.model,
+        metrics.duration.as_secs_f64(),
+        format_optional_count(usage.input_tokens),
+        format_optional_count(usage.cached_input_tokens),
+        format_optional_count(usage.output_tokens),
+    );
+}
+
+fn format_optional_count(count: Option<u64>) -> String {
+    count.map_or_else(|| "unknown".to_string(), |count| count.to_string())
+}
+
+fn format_bytes(bytes: usize) -> String {
+    if bytes < 1_024 {
+        format!("{bytes} B")
+    } else {
+        format!("{:.1} KiB", bytes as f64 / 1_024.0)
+    }
+}
+
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
-
     let args = cli::Args::parse();
 
     if let Some(key) = &args.openai_key {
@@ -123,85 +196,82 @@ async fn main() -> Result<()> {
         cli::logger_success("OpenAI API key saved to ~/.autocommitrc!");
         return Ok(());
     }
-
     if let Some(key) = &args.gemini_key {
         config::save_api_key(key, types::ModelType::Gemini)?;
         cli::logger_success("Gemini API key saved to ~/.autocommitrc!");
         return Ok(());
     }
-
     if let Some(model_str) = &args.model {
         let model = match model_str.as_str() {
             "openai" => types::ModelType::Openai,
             "gemini" => types::ModelType::Gemini,
             other => {
-                cli::logger_error(&format!(
-                    "Please specify --model with \"openai\" or \"gemini\" (got: {})",
-                    other
-                ));
-                std::process::exit(1);
+                anyhow::bail!(
+                    "Please specify --model with \"openai\" or \"gemini\" (got: {other})"
+                );
             }
         };
         config::set_model(model)?;
         cli::logger_success(&format!("Default model set to {}!", model.as_str()));
         return Ok(());
     }
-
     if args.short {
         config::set_message_style(types::MessageStyle::Short)?;
         cli::logger_success("Message style set to short!");
         return Ok(());
     }
-
     if args.long {
         config::set_message_style(types::MessageStyle::Long)?;
         cli::logger_success("Message style set to long!");
         return Ok(());
     }
-
     if args.sign {
         config::set_signed_commit(true)?;
         cli::logger_success("Signed commits enabled!");
         return Ok(());
     }
-
     if args.no_sign {
         config::set_signed_commit(false)?;
         cli::logger_success("Signed commits disabled!");
         return Ok(());
     }
 
-    if !config::config_file_exists() {
+    let Some(changes) = prepare_changes()? else {
+        return Ok(());
+    };
+    if args.stats {
+        print_context_stats(&changes.diff.stats);
+    }
+
+    let mut config = config::get_config()?;
+    if !config.has_selected_api_key() {
         cli::setup::run_interactive_setup()?;
+        config = config::get_config()?;
     }
 
-    let cfg = config::get_config()?;
+    let model = config.model;
+    let api_key = config.api_key_for(model).to_string();
+    let generator = ai::Generator::new(model, api_key)?;
+    println!(
+        "{}",
+        format!(
+            "Using {} ({}) for generation",
+            generator.provider_name(),
+            generator.model_name()
+        )
+        .blue()
+    );
 
-    // SAFETY: Single-threaded CLI app; env var modification is safe here.
-    unsafe {
-        if cfg.model == types::ModelType::Gemini && !cfg.gemini_key.is_empty() {
-            std::env::set_var("GEMINI_API_KEY", &cfg.gemini_key);
-        } else if !cfg.openai_key.is_empty() {
-            std::env::set_var("OPENAI_API_KEY", &cfg.openai_key);
-        } else if !cfg.gemini_key.is_empty() {
-            std::env::set_var("GEMINI_API_KEY", &cfg.gemini_key);
-        }
+    let message = choose_commit_message(
+        &generator,
+        &changes,
+        config.message_style,
+        !args.no_cache,
+        args.stats,
+    )
+    .await?;
+    if let Some(message) = message.filter(|message| !message.is_empty()) {
+        commit(&message, config.signed_commit, args.no_verify)?;
     }
-
-    let model = cfg.model;
-    let message_style = config::get_message_style(&cfg);
-    let signed = config::get_signed_commit(&cfg);
-    let no_verify = args.no_verify;
-
-    validate_git_state().await?;
-
-    let message = generate_message(model, message_style).await?;
-
-    let (_action, final_message) = get_user_action(&message).await?;
-
-    if !final_message.is_empty() {
-        commit(&final_message, signed, no_verify).await?;
-    }
-
     Ok(())
 }

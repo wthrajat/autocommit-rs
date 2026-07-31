@@ -61,6 +61,15 @@ pub enum MessageStyle {
     Long,
 }
 
+impl MessageStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MessageStyle::Short => "short",
+            MessageStyle::Long => "long",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActionType {
     Accept,
