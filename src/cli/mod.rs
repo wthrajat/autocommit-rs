@@ -64,12 +64,20 @@ pub fn logger_warn(msg: &str) {
     println!("{} {}", "⚠".yellow(), msg);
 }
 
+pub fn print_app_header(context: &str) {
+    let context = ui::sanitize_terminal_text(context).replace('\n', " ");
+    println!();
+    println!("{} {}", "◆".cyan(), "autocommit".bold());
+    println!("  {}", context.dimmed());
+    println!();
+}
+
 pub fn create_spinner(text: &str) -> ProgressBar {
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
         ProgressStyle::default_spinner()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-            .template("{spinner} {msg}")
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
+            .template("  {spinner:.cyan} {msg}")
             .unwrap(),
     );
     spinner.set_message(text.to_string());

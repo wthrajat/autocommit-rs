@@ -66,7 +66,7 @@ pub(crate) fn normalize(
 }
 
 fn is_valid_commit_message(candidate: &str, message_style: MessageStyle) -> bool {
-    if candidate.contains("```") {
+    if candidate.contains("```") || candidate.chars().any(is_unsafe_character) {
         return false;
     }
 
@@ -107,6 +107,18 @@ fn is_valid_commit_message(candidate: &str, message_style: MessageStyle) -> bool
                     .all(|line| line.starts_with("- ") && line.len() > 2)
         }
     }
+}
+
+fn is_unsafe_character(character: char) -> bool {
+    (character.is_control() && character != '\n')
+        || matches!(
+            character,
+            '\u{061c}'
+                | '\u{200e}'
+                | '\u{200f}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2066}'..='\u{2069}'
+        )
 }
 
 #[cfg(test)]
@@ -163,6 +175,10 @@ mod tests {
         assert!(!is_valid_commit_message(
             "perf(ai): reduce generation cost\nmissing blank line",
             MessageStyle::Long
+        ));
+        assert!(!is_valid_commit_message(
+            "fix(cli): hide text\u{202e}",
+            MessageStyle::Short
         ));
     }
 }

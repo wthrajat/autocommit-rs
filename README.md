@@ -20,7 +20,7 @@ cargo install autocommit-rs
 cargo install autocommit-rs --force
 ```
 
-**Use** — stage changes, then run `autocommit` and choose: **Accept and commit**, **Edit message**, **Regenerate**, or **Quit**.
+**Use** — stage changes, then run `autocommit` and choose: **Commit this message**, **Edit in your editor**, **Try another suggestion**, or **Cancel**.
 
 ## Prerequisites
 

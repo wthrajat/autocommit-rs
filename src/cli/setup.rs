@@ -2,17 +2,16 @@ use anyhow::Result;
 use colored::Colorize;
 use dialoguer::{Confirm, Password, Select};
 
+use super::ui::prompt_theme;
 use crate::config::{Config, save_config};
 use crate::types::{MessageStyle, ModelType};
 
 pub fn run_interactive_setup() -> Result<()> {
-    println!(
-        "{}",
-        "Welcome to autocommit! Let's set up your configuration.\n".yellow()
-    );
+    super::print_app_header("A quick setup, then your staged changes stay in flow");
+    let theme = prompt_theme();
 
-    let model_selection = Select::new()
-        .with_prompt("Which AI model would you like to use?")
+    let model_selection = Select::with_theme(&theme)
+        .with_prompt("AI provider")
         .items(&["OpenAI", "Google Gemini"])
         .default(0)
         .interact()?;
@@ -27,20 +26,22 @@ pub fn run_interactive_setup() -> Result<()> {
         ModelType::Gemini => "Gemini",
     };
 
-    let api_key = Password::new()
-        .with_prompt(format!("Enter your {} API key:", model_name))
+    let api_key = Password::with_theme(&theme)
+        .with_prompt(format!("{model_name} API key"))
         .validate_with(|input: &String| -> Result<(), &str> {
-            if input.is_empty() {
+            if input.trim().is_empty() {
                 Err("API key is required")
             } else {
                 Ok(())
             }
         })
-        .interact()?;
+        .interact()?
+        .trim()
+        .to_string();
 
-    let style_selection = Select::new()
-        .with_prompt("What commit message style do you prefer?")
-        .items(&["Short (one-line summary)", "Long (with description)"])
+    let style_selection = Select::with_theme(&theme)
+        .with_prompt("Commit message style")
+        .items(&["Short · one-line summary", "Long · summary with bullets"])
         .default(0)
         .interact()?;
 
@@ -49,7 +50,7 @@ pub fn run_interactive_setup() -> Result<()> {
         _ => MessageStyle::Long,
     };
 
-    let signed_commit = Confirm::new()
+    let signed_commit = Confirm::with_theme(&theme)
         .with_prompt("Sign commits with GPG?")
         .default(false)
         .interact()?;
@@ -66,18 +67,23 @@ pub fn run_interactive_setup() -> Result<()> {
     }
     save_config(&config)?;
 
-    print_setup_success();
+    print_setup_success(model_name, message_style, signed_commit);
     Ok(())
 }
 
-fn print_setup_success() {
-    println!("{} Configuration saved to ~/.autocommitrc!", "✔".green());
+fn print_setup_success(model_name: &str, message_style: MessageStyle, signed_commit: bool) {
+    let signing = if signed_commit { "GPG on" } else { "GPG off" };
+    println!();
+    super::logger_success("Setup complete");
     println!(
-        "{} You can change these settings anytime with:",
-        " ".dimmed()
+        "  {}  {} · {} messages · {signing}",
+        "Saved".dimmed(),
+        model_name,
+        message_style.as_str(),
     );
-    println!("  autocommit --openai-key \"key\"");
-    println!("  autocommit --gemini-key \"key\"");
-    println!("  autocommit --model openai|gemini");
-    println!("  autocommit --short|--long\n");
+    println!(
+        "  {}",
+        "Run `autocommit --help` to change settings later.".dimmed()
+    );
+    println!();
 }

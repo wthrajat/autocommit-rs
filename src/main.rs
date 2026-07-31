@@ -64,14 +64,15 @@ async fn generate_candidates(
             } else {
                 "Commit messages generated"
             };
-            spinner.finish_with_message(message.to_string());
+            spinner.finish_and_clear();
+            cli::logger_success(message);
             if show_stats {
                 print_generation_stats(&result.metrics);
             }
             Ok(result.candidates)
         }
         Err(error) => {
-            spinner.finish_with_message("Failed to generate commit messages".to_string());
+            spinner.finish_and_clear();
             Err(error)
         }
     }
@@ -129,23 +130,23 @@ fn commit(message: &str, signed: bool, no_verify: bool) -> Result<()> {
     let spinner = cli::create_spinner("Committing...");
     match git::commit_changes(message, signed, no_verify) {
         Ok(()) => {
-            spinner.finish_with_message("Committed successfully!".to_string());
+            spinner.finish_and_clear();
+            cli::logger_success("Commit created");
             Ok(())
         }
         Err(error) => {
-            spinner.finish_with_message("Git commit failed".to_string());
+            spinner.finish_and_clear();
             Err(error)
         }
     }
 }
 
 fn print_context_stats(stats: &git::diff::DiffStats) {
-    let truncation = if stats.truncated { ", truncated" } else { "" };
+    let truncation = if stats.truncated { " · truncated" } else { "" };
     println!(
-        "{} Context: {} across {} files → {} sent; {} generated patches omitted{}",
-        "ℹ".blue(),
+        "  {}  {} → {} · {} generated patches omitted{}",
+        "Context".dimmed(),
         format_bytes(stats.raw_bytes),
-        stats.changed_files,
         format_bytes(stats.included_bytes),
         stats.omitted_generated_files,
         truncation,
@@ -155,8 +156,8 @@ fn print_context_stats(stats: &git::diff::DiffStats) {
 fn print_generation_stats(metrics: &ai::GenerationMetrics) {
     if metrics.cache_hit {
         println!(
-            "{} AI: {} (local cache hit, 0 tokens)",
-            "ℹ".blue(),
+            "  {}       {} · local cache · 0 tokens",
+            "AI".dimmed(),
             metrics.model
         );
         return;
@@ -164,8 +165,8 @@ fn print_generation_stats(metrics: &ai::GenerationMetrics) {
 
     let usage = &metrics.usage;
     println!(
-        "{} AI: {} in {:.2}s; input {}, cached {}, output {} tokens",
-        "ℹ".blue(),
+        "  {}       {} · {:.2}s · {} input · {} cached · {} output tokens",
+        "AI".dimmed(),
         metrics.model,
         metrics.duration.as_secs_f64(),
         format_optional_count(usage.input_tokens),
@@ -239,10 +240,6 @@ async fn main() -> Result<()> {
     let Some(changes) = prepare_changes()? else {
         return Ok(());
     };
-    if args.stats {
-        print_context_stats(&changes.diff.stats);
-    }
-
     let mut config = config::get_config()?;
     if !config.has_selected_api_key() {
         cli::setup::run_interactive_setup()?;
@@ -252,15 +249,22 @@ async fn main() -> Result<()> {
     let model = config.model;
     let api_key = config.api_key_for(model).to_string();
     let generator = ai::Generator::new(model, api_key)?;
-    println!(
-        "{}",
-        format!(
-            "Using {} ({}) for generation",
-            generator.provider_name(),
-            generator.model_name()
-        )
-        .blue()
-    );
+    let changed_files = changes.diff.stats.changed_files;
+    let file_label = if changed_files == 1 {
+        "staged file"
+    } else {
+        "staged files"
+    };
+    cli::print_app_header(&format!(
+        "{} {file_label} · {} · {}",
+        changed_files,
+        generator.provider_name(),
+        generator.model_name(),
+    ));
+    if args.stats {
+        print_context_stats(&changes.diff.stats);
+        println!();
+    }
 
     let message = choose_commit_message(
         &generator,
