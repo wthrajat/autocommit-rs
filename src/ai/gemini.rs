@@ -8,6 +8,24 @@ use super::{ProviderResponse, TokenUsage};
 
 const GEMINI_API_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
+// The Gemini responseSchema accepts an OpenAPI 3.0 subset, which has no
+// additionalProperties keyword; unknown keys risk a rejected payload.
+fn openapi_compatible_schema(schema: Value) -> Value {
+    match schema {
+        Value::Object(mut object) => {
+            object.remove("additionalProperties");
+            for value in object.values_mut() {
+                *value = openapi_compatible_schema(value.take());
+            }
+            Value::Object(object)
+        }
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(openapi_compatible_schema).collect())
+        }
+        schema => schema,
+    }
+}
+
 #[derive(Serialize)]
 struct GeminiRequest<'a> {
     contents: [GeminiContent<'a>; 1],
@@ -81,12 +99,8 @@ pub async fn generate_commit_messages(
         },
         generation_config: json!({
             "maxOutputTokens": max_tokens,
-            "responseFormat": {
-                "text": {
-                    "mimeType": "application/json",
-                    "schema": candidate_schema()
-                }
-            }
+            "responseMimeType": "application/json",
+            "responseSchema": openapi_compatible_schema(candidate_schema())
         }),
     };
     let url = format!("{GEMINI_API_BASE_URL}/{model}:generateContent");
@@ -146,21 +160,31 @@ mod tests {
             },
             generation_config: json!({
                 "maxOutputTokens": 320,
-                "responseFormat": {
-                    "text": {
-                        "mimeType": "application/json",
-                        "schema": candidate_schema()
-                    }
-                }
+                "responseMimeType": "application/json",
+                "responseSchema": openapi_compatible_schema(candidate_schema())
             }),
         };
         let value = serde_json::to_value(request).unwrap();
 
         assert_eq!(value["system_instruction"]["parts"][0]["text"], "system");
         assert_eq!(
-            value["generationConfig"]["responseFormat"]["text"]["mimeType"],
+            value["generationConfig"]["responseMimeType"],
             "application/json"
         );
+        assert_eq!(
+            value["generationConfig"]["responseSchema"]["type"],
+            "object"
+        );
         assert!(value["generationConfig"].get("temperature").is_none());
+    }
+
+    #[test]
+    fn schema_strips_additional_properties_for_gemini() {
+        let schema = candidate_schema();
+        assert!(schema.get("additionalProperties").is_some());
+
+        let adapted = serde_json::to_value(openapi_compatible_schema(schema)).unwrap();
+        assert_eq!(adapted["type"], "object");
+        assert!(!adapted.to_string().contains("additionalProperties"));
     }
 }

@@ -19,6 +19,11 @@ use self::prompts::{
 const DEFAULT_OPENAI_MODEL: &str = "gpt-5-nano";
 const DEFAULT_GEMINI_MODEL: &str = "gemini-3.5-flash-lite";
 
+// Models occasionally return empty or malformed output; one extra attempt
+// recovers without surfacing an error to the user.
+const GENERATION_ATTEMPTS: usize = 2;
+const GENERATION_RETRY_PAUSE_MILLIS: u64 = 350;
+
 pub struct GenerateOptions<'a> {
     pub diff: &'a str,
     pub diff_fingerprint: &'a str,
@@ -133,19 +138,16 @@ impl Generator {
         }
 
         let started_at = Instant::now();
-        let provider_response = self
-            .request_provider(
+        let (provider_response, candidates) = self
+            .request_and_parse(
                 system_prompt,
                 &user_prompt,
                 options.diff_fingerprint,
                 max_tokens,
+                options.message_style,
+                excluded_candidates,
             )
             .await?;
-        let candidates = candidates::parse(
-            &provider_response.content,
-            options.message_style,
-            excluded_candidates,
-        )?;
 
         if use_cache && excluded_candidates.is_empty() {
             let _ = cache::store(&cache_key, &candidates);
@@ -160,6 +162,34 @@ impl Generator {
                 usage: provider_response.usage,
             },
         })
+    }
+
+    async fn request_and_parse(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+        diff_fingerprint: &str,
+        max_tokens: u32,
+        message_style: MessageStyle,
+        excluded_candidates: &[String],
+    ) -> Result<(ProviderResponse, Vec<String>)> {
+        for attempt in 0..GENERATION_ATTEMPTS {
+            let provider_response = self
+                .request_provider(system_prompt, user_prompt, diff_fingerprint, max_tokens)
+                .await?;
+            match candidates::parse(
+                &provider_response.content,
+                message_style,
+                excluded_candidates,
+            ) {
+                Ok(candidates) => return Ok((provider_response, candidates)),
+                Err(_) if attempt + 1 < GENERATION_ATTEMPTS => {
+                    tokio::time::sleep(Duration::from_millis(GENERATION_RETRY_PAUSE_MILLIS)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("generation loop always returns on its final attempt")
     }
 
     async fn request_provider(
