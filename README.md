@@ -10,14 +10,23 @@ Generates and creates [conventional commits](https://www.conventionalcommits.org
 
 ## Quick start
 
-**Install**
+**Install** from crates.io:
 ```bash
 cargo install autocommit-rs
 ```
 
+Or straight from GitHub (latest `main`, useful when crates.io lags behind):
+```bash
+cargo install --git https://github.com/wthrajat/autocommit-rs --force
+```
+
+Prebuilt binaries for Linux, macOS, and Windows are also on the [releases page](https://github.com/wthrajat/autocommit-rs/releases).
+
 **Update**
 ```bash
 cargo install autocommit-rs --force
+# or, installed from GitHub:
+cargo install --git https://github.com/wthrajat/autocommit-rs --force
 ```
 
 **Use** — stage changes, then run `autocommit` and choose: **Commit this message**, **Edit in your editor**, **Try another suggestion**, or **Cancel**.

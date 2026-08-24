@@ -18,6 +18,9 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
 
+    env:
+      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -62,6 +65,12 @@ jobs:
       - name: Build and validate
         if: steps.check_tag.outputs.is_new == 'true'
         run: cargo build --release
+
+      - name: Publish to crates.io
+        if: steps.check_tag.outputs.is_new == 'true' && env.CRATES_IO_TOKEN != ''
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
   build:
     name: Build (${{ matrix.target }})
