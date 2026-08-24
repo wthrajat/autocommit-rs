@@ -1,6 +1,6 @@
 [package]
 name = "autocommit-rs"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Tool that generates conventional commits from staged changes and executes the commit in one go."
 license = "MIT"
