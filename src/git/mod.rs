@@ -71,7 +71,7 @@ pub fn get_staged_diff_context(files: &[String]) -> Result<DiffContext> {
     Ok(context)
 }
 
-pub fn commit_changes(message: &str, signed: bool, no_verify: bool) -> Result<()> {
+pub fn commit_changes(message: &str, signed: bool, no_verify: bool) -> Result<String> {
     let mut args = vec!["commit"];
     if signed {
         args.push("-S");
@@ -91,7 +91,17 @@ pub fn commit_changes(message: &str, signed: bool, no_verify: bool) -> Result<()
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("Git commit failed: {}", stderr.trim());
     }
-    Ok(())
+    Ok(short_head_sha())
+}
+
+fn short_head_sha() -> String {
+    Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default()
 }
 
 fn parse_repository_state(output: &[u8]) -> RepositoryState {

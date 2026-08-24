@@ -129,9 +129,15 @@ async fn choose_commit_message(
 fn commit(message: &str, signed: bool, no_verify: bool) -> Result<()> {
     let spinner = cli::create_spinner("Committing...");
     match git::commit_changes(message, signed, no_verify) {
-        Ok(()) => {
+        Ok(sha) => {
             spinner.finish_and_clear();
-            cli::logger_success("Commit created");
+            if sha.is_empty() {
+                cli::logger_success("Commit created");
+            } else {
+                cli::logger_success(&format!("Committed {}", sha.cyan()));
+                let summary = message.lines().next().unwrap_or_default();
+                println!("  {}", summary.dimmed());
+            }
             Ok(())
         }
         Err(error) => {
@@ -143,36 +149,38 @@ fn commit(message: &str, signed: bool, no_verify: bool) -> Result<()> {
 
 fn print_context_stats(stats: &git::diff::DiffStats) {
     let truncation = if stats.truncated { " · truncated" } else { "" };
-    println!(
-        "  {}  {} → {} · {} generated patches omitted{}",
-        "Context".dimmed(),
+    let mut value = format!(
+        "{} → {}",
         format_bytes(stats.raw_bytes),
-        format_bytes(stats.included_bytes),
-        stats.omitted_generated_files,
-        truncation,
+        format_bytes(stats.included_bytes)
     );
+    value.push_str(&format!(
+        " · {} generated patches omitted",
+        stats.omitted_generated_files
+    ));
+    value.push_str(truncation);
+    cli::stat_line("Context", &value);
 }
 
 fn print_generation_stats(metrics: &ai::GenerationMetrics) {
     if metrics.cache_hit {
-        println!(
-            "  {}       {} · local cache · 0 tokens",
-            "AI".dimmed(),
-            metrics.model
+        cli::stat_line(
+            "AI",
+            &format!("{} · local cache · 0 tokens", metrics.model.bright_cyan()),
         );
         return;
     }
 
     let usage = &metrics.usage;
-    println!(
-        "  {}       {} · {:.2}s · {} input · {} cached · {} output tokens",
-        "AI".dimmed(),
-        metrics.model,
+    let value = format!(
+        "{} · {:.2}s · {} input · {} cached · {} output tokens",
+        metrics.model.bright_cyan(),
         metrics.duration.as_secs_f64(),
         format_optional_count(usage.input_tokens),
         format_optional_count(usage.cached_input_tokens),
         format_optional_count(usage.output_tokens),
     );
+    cli::stat_line("AI", &value);
 }
 
 fn format_optional_count(count: Option<u64>) -> String {
@@ -188,8 +196,15 @@ fn format_bytes(bytes: usize) -> String {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
+async fn main() {
     dotenvy::dotenv().ok();
+    if let Err(error) = run().await {
+        cli::print_error_chain(&error);
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
     let args = cli::Args::parse();
 
     if let Some(key) = &args.openai_key {

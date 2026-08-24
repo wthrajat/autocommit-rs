@@ -64,12 +64,33 @@ pub fn logger_warn(msg: &str) {
     println!("{} {}", "⚠".yellow(), msg);
 }
 
+pub fn print_error_chain(error: &anyhow::Error) {
+    let mut causes = error.chain();
+    let Some(root) = causes.next() else {
+        return;
+    };
+    println!("{} {}", "✖".red(), root.to_string().bold().red());
+    for cause in causes {
+        println!("   {} {}", "└".dimmed(), cause.to_string().dimmed());
+    }
+}
+
 pub fn print_app_header(context: &str) {
     let context = ui::sanitize_terminal_text(context).replace('\n', " ");
+    let version = concat!("v", env!("CARGO_PKG_VERSION"));
     println!();
-    println!("{} {}", "◆".cyan(), "autocommit".bold());
+    println!(
+        "{} {} {}",
+        "◆".cyan(),
+        "autocommit".bold(),
+        version.bright_black()
+    );
     println!("  {}", context.dimmed());
     println!();
+}
+
+pub fn stat_line(label: &str, value: &str) {
+    println!("  {}  {}", format!("{label:<7}").bright_black(), value);
 }
 
 pub fn create_spinner(text: &str) -> ProgressBar {

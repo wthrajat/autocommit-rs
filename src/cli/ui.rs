@@ -1,9 +1,9 @@
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 use dialoguer::Select;
-use dialoguer::console::{Term, measure_text_width, strip_ansi_codes};
+use dialoguer::console::{Style, Term, measure_text_width, strip_ansi_codes, style};
 use dialoguer::theme::ColorfulTheme;
 use tempfile::NamedTempFile;
 
@@ -48,7 +48,23 @@ pub fn show_commit_options(message: &str) -> Result<ActionType> {
 }
 
 pub fn prompt_theme() -> ColorfulTheme {
-    ColorfulTheme::default()
+    ColorfulTheme {
+        defaults_style: Style::new().for_stderr().cyan(),
+        prompt_style: Style::new().for_stderr().bold(),
+        prompt_prefix: style("◆".to_string()).for_stderr().cyan(),
+        prompt_suffix: style("›".to_string()).for_stderr().black().bright(),
+        success_prefix: style("✔".to_string()).for_stderr().green(),
+        success_suffix: style("·".to_string()).for_stderr().black().bright(),
+        error_prefix: style("✖".to_string()).for_stderr().red(),
+        error_style: Style::new().for_stderr().red(),
+        hint_style: Style::new().for_stderr().black().bright(),
+        values_style: Style::new().for_stderr().cyan(),
+        active_item_style: Style::new().for_stderr().bold(),
+        inactive_item_style: Style::new().for_stderr().black().bright(),
+        active_item_prefix: style("❯".to_string()).for_stderr().cyan().bold(),
+        inactive_item_prefix: style(" ".to_string()).for_stderr(),
+        ..ColorfulTheme::default()
+    }
 }
 
 fn print_commit_preview(message: &str, terminal_width: usize) {
@@ -58,8 +74,8 @@ fn print_commit_preview(message: &str, terminal_width: usize) {
     if available_width < MIN_BOX_WIDTH {
         println!("\n{}", "Commit preview".bold().cyan());
         let content_width = available_width.saturating_sub(2).max(1);
-        for line in wrap_preview(&sanitized, content_width) {
-            println!("  {line}");
+        for (index, line) in wrap_preview(&sanitized, content_width).iter().enumerate() {
+            println!("  {}", render_preview_line(line, index == 0));
         }
         println!();
         return;
@@ -82,16 +98,15 @@ fn print_commit_preview(message: &str, terminal_width: usize) {
 
     println!();
     println!(
-        "{}",
-        format!("╭─ {title} {}╮", "─".repeat(top_rule_width)).cyan()
+        "{} {} {}{}",
+        "╭─".cyan(),
+        title.bold().cyan(),
+        "─".repeat(top_rule_width).cyan(),
+        "╮".cyan(),
     );
     for (index, line) in preview_lines.iter().enumerate() {
         let padding = content_width.saturating_sub(measure_text_width(line));
-        let content = if index == 0 {
-            line.bold().to_string()
-        } else {
-            line.to_string()
-        };
+        let content = render_preview_line(line, index == 0);
         println!(
             "{} {}{} {}",
             "│".cyan(),
@@ -102,6 +117,55 @@ fn print_commit_preview(message: &str, terminal_width: usize) {
     }
     println!("{}", format!("╰{}╯", "─".repeat(box_width - 2)).cyan());
     println!();
+}
+
+fn render_preview_line(line: &str, is_summary: bool) -> String {
+    if is_summary {
+        render_summary_line(line)
+    } else if let Some(bullet) = line.strip_prefix("- ") {
+        format!("{}{bullet}", "- ".bright_black())
+    } else {
+        line.to_string()
+    }
+}
+
+fn render_summary_line(summary: &str) -> String {
+    let Some((prefix, description)) = summary.split_once(": ") else {
+        return summary.bold().to_string();
+    };
+    let (commit_type, scope) = match prefix.split_once('(') {
+        Some((commit_type, scoped)) if scoped.ends_with(')') => {
+            (commit_type, Some(&scoped[..scoped.len() - 1]))
+        }
+        _ => (prefix, None),
+    };
+
+    let mut rendered = String::new();
+    let accent = accent_commit_type(commit_type);
+    rendered.push_str(&accent.bold().to_string());
+    if let Some(scope) = scope {
+        rendered.push_str(&format!("({scope})").bright_black());
+    }
+    rendered.push_str(&": ".bright_black());
+    rendered.push_str(description);
+    rendered
+}
+
+fn accent_commit_type(commit_type: &str) -> ColoredString {
+    match commit_type {
+        "feat" => commit_type.bright_green(),
+        "fix" => commit_type.bright_red(),
+        "docs" => commit_type.blue(),
+        "style" => commit_type.magenta(),
+        "refactor" => commit_type.purple(),
+        "perf" => commit_type.yellow(),
+        "test" => commit_type.cyan(),
+        "build" => commit_type.bright_blue(),
+        "ci" => commit_type.bright_cyan(),
+        "chore" => commit_type.bright_black(),
+        "revert" => commit_type.bright_red(),
+        _ => commit_type.normal(),
+    }
 }
 
 fn terminal_width() -> usize {
@@ -250,5 +314,32 @@ mod tests {
         let sanitized = sanitize_terminal_text("\x1b[31mfix(cli): safe preview\x1b[0m\x07\u{202e}");
 
         assert_eq!(sanitized, "fix(cli): safe preview");
+    }
+
+    #[test]
+    fn summary_and_bullets_are_styled_without_changing_visible_text() {
+        colored::control::set_override(true);
+        let summary = render_preview_line("feat(auth): implement login", true);
+        let bullet = render_preview_line("- add cache layer", false);
+        colored::control::unset_override();
+
+        assert_eq!(
+            measure_text_width(&summary),
+            measure_text_width("feat(auth): implement login")
+        );
+        assert_eq!(
+            measure_text_width(&bullet),
+            measure_text_width("- add cache layer")
+        );
+        assert!(summary.contains("feat"));
+    }
+
+    #[test]
+    fn non_conventional_summary_renders_unchanged_without_color() {
+        colored::control::set_override(false);
+        let rendered = render_summary_line("just some text");
+        colored::control::unset_override();
+
+        assert_eq!(rendered, "just some text");
     }
 }
